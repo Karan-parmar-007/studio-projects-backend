@@ -16,6 +16,8 @@ from app.db.base import Base
 import app.api.routes.api_key.model  # noqa: F401
 import app.api.routes.model_links.model  # noqa: F401
 import app.api.routes.downloads.model  # noqa: F401
+import app.api.routes.services.model  # noqa: F401
+import app.api.routes.gmaps.model  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", db_settings.postgres_url)

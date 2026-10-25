@@ -14,6 +14,7 @@ class ProjectOut(BaseModel):
     tagline: str
     description: str
     status: str
+    enabled: bool = True
     page: str
     playground: bool
     apps: list[str]

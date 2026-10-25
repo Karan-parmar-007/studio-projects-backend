@@ -28,6 +28,10 @@ Verify: `curl http://localhost:8001/health`
 | `GET/PUT /api/studio/whisperflow/links[/{id}]` | SSO cookie + CSRF | WhisperFlow model links for this user |
 | `POST /api/studio/whisperflow/transcribe|format`, `GET .../jobs/{id}` | SSO cookie + CSRF | the free playground on the website |
 | `POST /api/studio/v1/whisperflow/transcribe|format`, `GET .../jobs/{id}` | `Authorization: Bearer sk-studio_...` | desktop app, Android keyboard, your own code |
+| `PUT /api/studio/admin/services/{slug}` | SSO admin | product on/off switch; turning `gmaps` off stops running searches |
+| `GET /api/studio/gmaps/quota`, `GET .../locations/countries|states|cities` | SSO cookie | Maps Scraper quota (50/user/UTC day) and US places |
+| `POST /api/studio/gmaps/runs/stream` | SSO cookie + CSRF | Maps Scraper playground; NDJSON stream |
+| `GET /api/studio/v1/gmaps/quota|locations/*`, `POST /api/studio/v1/gmaps/runs/stream` | `Authorization: Bearer sk-studio_...` | same, same quota, for API users |
 
 A busy gateway answers `202 {status: queued, job_id, poll}`; poll until `status` is
 `done` or `error`.

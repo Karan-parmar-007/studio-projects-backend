@@ -36,6 +36,18 @@ class ModelOfflineError(DomainError):
         super().__init__(message)
 
 
+class ServiceClosedError(DomainError):
+    pass
+
+
+class QuotaError(DomainError):
+    """429. code is "quota_exceeded" (daily limit) or "busy" (too many runs at once)."""
+
+    def __init__(self, message: str, code: str = "quota_exceeded") -> None:
+        self.code = code
+        super().__init__(message)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(NotFoundError)
     async def not_found_handler(_request: Request, exc: NotFoundError) -> JSONResponse:
@@ -48,6 +60,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ValidationError)
     async def validation_handler(_request: Request, exc: ValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": exc.message})
+
+    @app.exception_handler(ServiceClosedError)
+    async def closed_handler(_request: Request, exc: ServiceClosedError) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": exc.message, "code": "service_off"},
+        )
+
+    @app.exception_handler(QuotaError)
+    async def quota_handler(_request: Request, exc: QuotaError) -> JSONResponse:
+        return JSONResponse(status_code=429, content={"detail": exc.message, "code": exc.code})
 
     @app.exception_handler(ModelOfflineError)
     async def offline_handler(_request: Request, exc: ModelOfflineError) -> JSONResponse:

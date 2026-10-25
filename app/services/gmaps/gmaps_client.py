@@ -1,0 +1,193 @@
+"""HTTP client for Google Maps search endpoint (direct requests, no proxies)."""
+
+from __future__ import annotations
+
+import random
+import time
+from typing import Any
+from urllib.parse import urlencode
+
+import requests
+
+from .config import (
+    DEFAULT_COOKIES,
+    DEFAULT_GL,
+    DEFAULT_HEADERS,
+    DEFAULT_HL,
+    DEFAULT_LAT,
+    DEFAULT_LNG,
+    DEFAULT_SPAN,
+    GMAPS_SEARCH_URL,
+    MAX_RETRIES,
+    REQUEST_TIMEOUT,
+    build_pb,
+)
+from .locations import ZipLocation
+
+
+class BlockedError(RuntimeError):
+    """Raised when Google returns a consent/CAPTCHA/block page."""
+
+
+class GMapsClient:
+    def __init__(
+        self,
+        *,
+        hl: str = DEFAULT_HL,
+        gl: str = DEFAULT_GL,
+        timeout: float = REQUEST_TIMEOUT,
+    ) -> None:
+        self.hl = hl
+        self.gl = gl
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update(DEFAULT_HEADERS)
+        self.session.cookies.update(DEFAULT_COOKIES)
+        self._zip_psi: str | None = None
+        self._zip_ech = 0
+
+    def close(self) -> None:
+        self.session.close()
+
+    def begin_zip_session(self) -> None:
+        """Start a new Maps session for paginated requests within one ZIP."""
+        self._zip_psi = self._make_psi()
+        self._zip_ech = 0
+
+    def end_zip_session(self) -> None:
+        self._zip_psi = None
+        self._zip_ech = 0
+
+    def search(
+        self,
+        query: str,
+        *,
+        lat: float = DEFAULT_LAT,
+        lng: float = DEFAULT_LNG,
+        span: float = DEFAULT_SPAN,
+        offset: int = 0,
+        use_zip_session: bool = False,
+        location: ZipLocation | None = None,
+    ) -> str:
+        """
+        Perform a Maps search and return raw response text.
+        Raises BlockedError / requests.HTTPError on failure after retries.
+        """
+        del location  # kept for call-site compatibility; unused without proxies
+        if use_zip_session:
+            if not self._zip_psi:
+                self.begin_zip_session()
+            self._zip_ech += 1
+            psi = self._zip_psi
+            ech = self._zip_ech
+        else:
+            psi = self._make_psi()
+            ech = 1
+
+        params = {
+            "tbm": "map",
+            "authuser": "0",
+            "hl": self.hl,
+            "gl": self.gl,
+            "pb": build_pb(lat=lat, lng=lng, span=span, offset=offset),
+            "q": query,
+            "oq": query,
+            "tch": "1",
+            "ech": str(ech),
+            "psi": psi,
+        }
+        return self._request(GMAPS_SEARCH_URL, params)
+
+    def _request(self, url: str, params: dict[str, Any]) -> str:
+        last_err: Exception | None = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                resp = self.session.get(url, params=params, timeout=self.timeout)
+                if resp.status_code in (429, 503):
+                    last_err = BlockedError(f"HTTP {resp.status_code}")
+                    time.sleep(2**attempt + random.random())
+                    continue
+
+                resp.raise_for_status()
+                text = self._decode_body(resp)
+
+                if self._looks_blocked(text):
+                    last_err = BlockedError("Consent/CAPTCHA/block page detected")
+                    time.sleep(2**attempt + random.random())
+                    continue
+
+                return text
+            except requests.RequestException as exc:
+                last_err = exc
+                time.sleep(2**attempt + random.random())
+
+        raise last_err or RuntimeError("Search failed")
+
+    @staticmethod
+    def _decode_body(resp: requests.Response) -> str:
+        """Return decoded text, handling gzip/brotli edge cases."""
+        encoding = (resp.headers.get("Content-Encoding") or "").lower()
+        content = resp.content or b""
+
+        preview = content[:20]
+        if preview.startswith(b"{") or preview.startswith(b")]}'") or preview.startswith(
+            b"[["
+        ):
+            return content.decode(resp.encoding or "utf-8", errors="replace")
+
+        if "br" in encoding or (content[:1] == b"\x1b" or content[:4] == b"W\x00"):
+            try:
+                import brotli  # type: ignore
+
+                content = brotli.decompress(content)
+            except Exception:
+                pass
+
+        if resp.encoding:
+            return content.decode(resp.encoding, errors="replace")
+        return content.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _make_psi() -> str:
+        stamp = int(time.time() * 1000)
+        rand = "".join(
+            random.choices(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
+                k=22,
+            )
+        )
+        return f"{rand}.{stamp}.1"
+
+    @staticmethod
+    def _looks_blocked(text: str) -> bool:
+        if not text or len(text) < 50:
+            return True
+        low = text[:2000].lower()
+        stripped = text.lstrip()
+        if stripped.startswith("{") and '"d"' in stripped[:500]:
+            return False
+        if stripped.startswith(")]}'") or stripped.startswith("[["):
+            return False
+        markers = (
+            "unusual traffic",
+            "detected unusual traffic",
+            "our systems have detected",
+            "g-recaptcha",
+            "consent.google.com",
+            "before you continue",
+            "captcha",
+        )
+        return any(m in low for m in markers)
+
+    def build_url(
+        self, query: str, lat: float = DEFAULT_LAT, lng: float = DEFAULT_LNG
+    ) -> str:
+        params = {
+            "tbm": "map",
+            "hl": self.hl,
+            "gl": self.gl,
+            "pb": build_pb(lat=lat, lng=lng, offset=0),
+            "q": query,
+            "tch": "1",
+        }
+        return f"{GMAPS_SEARCH_URL}?{urlencode(params)}"

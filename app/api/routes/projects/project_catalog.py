@@ -11,11 +11,7 @@ PROJECTS: list[dict] = [
         "slug": "whisperflow",
         "name": "WhisperFlow",
         "tagline": "Speak into any text box.",
-        "description": (
-            "A Whisper Flow clone. Hindi, English, and Hinglish. Tara writes down what you "
-            "said, Qwen turns it into the text you meant, and the apps paste it wherever you "
-            "were typing. Try it in the playground, or use the API key from any app."
-        ),
+        "description": "Speak, and the text shows up. Hindi, English, and Hinglish.",
         "status": "live",
         "page": "/whisperflow-clone",
         "playground": True,
@@ -42,15 +38,74 @@ PROJECTS: list[dict] = [
         ],
     },
     {
-        "slug": "chatbot",
-        "name": "Chatbot",
-        "tagline": "A chat API on the same models.",
-        "description": "Coming next. Chat on the LLM gateway, with RAG behind it.",
-        "status": "soon",
-        "page": "",
-        "playground": False,
+        "slug": "llm",
+        "name": "LLM",
+        "tagline": "Send a message. Get a reply.",
+        "description": "A chatbot. Ask a question, or send text to clean up.",
+        "status": "live",
+        "page": "/products/llm",
+        "playground": True,
         "apps": [],
-        "endpoints": [],
+        "endpoints": [
+            {
+                "operation": "chat",
+                "method": "POST",
+                "path": "/api/studio/v1/llm/chat",
+                "summary": "Send a message and get a reply.",
+            },
+            {
+                "operation": "format",
+                "method": "POST",
+                "path": "/api/studio/v1/llm/format",
+                "summary": "Clean up text: punctuation, lists, and Hindi script.",
+            },
+            {
+                "operation": "job",
+                "method": "GET",
+                "path": "/api/studio/v1/llm/jobs/{job_id}",
+                "summary": "Poll a queued reply until it is done.",
+            },
+        ],
+    },
+    {
+        "slug": "gmaps",
+        "name": "Maps Scraper",
+        "tagline": "Find companies on Google Maps.",
+        "description": (
+            "Search Google Maps by business type and place, and get names, phones, "
+            "websites and ratings as they are found. United States only. "
+            "50 companies per user per day."
+        ),
+        "status": "live",
+        "page": "/products/gmaps",
+        "playground": True,
+        "apps": [],
+        "endpoints": [
+            {
+                "operation": "run",
+                "method": "POST",
+                "path": "/api/studio/v1/gmaps/runs/stream",
+                "summary": "Start a search. Results stream back as NDJSON, one event per line.",
+            },
+            {
+                "operation": "quota",
+                "method": "GET",
+                "path": "/api/studio/v1/gmaps/quota",
+                "summary": "How many of today's 50 companies you have left.",
+            },
+            {
+                "operation": "states",
+                "method": "GET",
+                "path": "/api/studio/v1/gmaps/locations/states",
+                "summary": "States you can search in.",
+            },
+            {
+                "operation": "cities",
+                "method": "GET",
+                "path": "/api/studio/v1/gmaps/locations/cities",
+                "summary": "Cities, optionally only in the given ?state=... (repeatable).",
+            },
+        ],
     },
 ]
 

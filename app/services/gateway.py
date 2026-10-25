@@ -21,6 +21,24 @@ logger = logging.getLogger(__name__)
 _JOBS: dict[str, tuple[str, str]] = {}
 
 
+def strip_control_preamble(text: str) -> str:
+    """Drop a leaked script=/tone= header the formatter sometimes repeats."""
+    lines = text.splitlines()
+    while lines and lines[0].strip().lower().startswith(("script=", "tone=")):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _clean_reply(body: dict) -> dict:
+    cleaned = dict(body)
+    if isinstance(cleaned.get("text"), str):
+        cleaned["text"] = strip_control_preamble(cleaned["text"])
+    result = cleaned.get("result")
+    if isinstance(result, dict) and isinstance(result.get("text"), str):
+        cleaned["result"] = {**result, "text": strip_control_preamble(result["text"])}
+    return cleaned
+
+
 def remember_job(job_id: str, base: str, owner_id: str) -> None:
     _JOBS[job_id] = (base.rstrip("/"), owner_id)
 
@@ -46,7 +64,7 @@ async def read_job(job_id: str, owner_id: str) -> tuple[dict, int]:
         body = response.json()
     except ValueError:
         body = {"detail": response.text, "status": "error"}
-    return body, response.status_code
+    return _clean_reply(body) if isinstance(body, dict) else body, response.status_code
 
 
 async def run_operation(
@@ -105,8 +123,11 @@ async def run_operation(
                 body = {"text": response.text}
             if not isinstance(body, dict):
                 body = {"text": body}
+            reply = body.get("text") or body.get("polished") or body.get("content") or ""
+            if isinstance(reply, str):
+                reply = strip_control_preamble(reply)
             return {
-                "text": body.get("text") or body.get("polished") or body.get("content") or "",
+                "text": reply,
                 "raw": body,
                 "provider": {"role": choice.role, "placement": choice.placement},
             }
