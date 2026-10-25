@@ -60,3 +60,20 @@ async def test_no_ready_link_is_a_clear_offline_error():
     with pytest.raises(gateway.ModelOfflineError) as caught:
         await gateway.run_operation(rows, "llm", "/format", {"text": "hi"}, "owner", "whisperflow")
     assert caught.value.checks[0]["state"] == "toggle_off"
+
+
+class RunningClient(FakeClient):
+    async def get(self, url, headers=None):
+        return httpx.Response(202, json={"id": "job-voice", "status": "running", "lane": "voice"})
+
+
+@pytest.mark.asyncio
+async def test_a_running_poll_carries_the_job_id(monkeypatch):
+    """The gateway names it `id`; callers read `job_id` on every response."""
+    monkeypatch.setattr(gateway.httpx, "AsyncClient", RunningClient)
+    gateway._JOBS.clear()
+    await gateway.run_operation(_rows(), "llm", "/format", {"text": "hi"}, "owner", "whisperflow")
+    body, status = await gateway.read_job("job-voice", "owner")
+    assert status == 202
+    assert body["status"] == "running"
+    assert body["job_id"] == "job-voice"

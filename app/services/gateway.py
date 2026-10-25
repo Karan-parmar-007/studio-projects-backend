@@ -64,7 +64,11 @@ async def read_job(job_id: str, owner_id: str) -> tuple[dict, int]:
         body = response.json()
     except ValueError:
         body = {"detail": response.text, "status": "error"}
-    return _clean_reply(body) if isinstance(body, dict) else body, response.status_code
+    if not isinstance(body, dict):
+        return body, response.status_code
+    # The gateway names it `id`; every Studio response calls it `job_id`.
+    body = {**body, "job_id": body.get("job_id") or body.get("id") or job_id}
+    return _clean_reply(body), response.status_code
 
 
 async def run_operation(
