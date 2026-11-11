@@ -107,6 +107,60 @@ PROJECTS: list[dict] = [
             },
         ],
     },
+    {
+        "slug": "rag",
+        "name": "Ask a Document",
+        "tagline": "Ask questions, get answers with the pictures.",
+        "description": (
+            "Ask a long illustrated book anything, or upload your own document (up to 5 MB, kept "
+            "for an hour). Answers cite the passages they used and show the figures that matter."
+        ),
+        "status": "live",
+        "page": "/products/rag",
+        "playground": True,
+        "apps": [],
+        "endpoints": [
+            {
+                "operation": "ask",
+                "method": "POST",
+                "path": "/api/studio/rag/ask",
+                "summary": "Ask the book or your upload. The answer streams back as NDJSON events.",
+            },
+            {
+                "operation": "upload",
+                "method": "POST",
+                "path": "/api/studio/rag/upload",
+                "summary": "Upload one document (multipart, field 'file'). Delete it to upload another.",
+            },
+            {
+                "operation": "status",
+                "method": "GET",
+                "path": "/api/studio/rag/status",
+                "summary": "What you can use, the book, and your upload's progress.",
+            },
+        ],
+    },
+    {
+        "slug": "chatbot",
+        "name": "Assistant",
+        "tagline": "Ask about Karan and Studio.",
+        "description": (
+            "The assistant on this site and the portfolio. It knows Karan's work and Studio's "
+            "products, and when you are signed in it can set up a Maps Scraper search for you."
+        ),
+        "status": "live",
+        "page": "/products/chatbot",
+        "playground": False,
+        "apps": [],
+        "endpoints": [
+            {
+                "operation": "chat",
+                "method": "POST",
+                "path": "/api/studio/chatbot/chat",
+                "summary": "Send a message with recent history. The reply streams back as NDJSON events.",
+            },
+        ],
+    },
 ]
 
 

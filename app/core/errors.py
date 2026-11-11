@@ -40,6 +40,14 @@ class ServiceClosedError(DomainError):
     pass
 
 
+class SignInRequiredError(DomainError):
+    """401 with code "sign_in": the product is open to signed-in people only."""
+
+
+class ForbiddenError(DomainError):
+    """403: signed in, but this account's role may not use it."""
+
+
 class QuotaError(DomainError):
     """429. code is "quota_exceeded" (daily limit) or "busy" (too many runs at once)."""
 
@@ -67,6 +75,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=503,
             content={"detail": exc.message, "code": "service_off"},
         )
+
+    @app.exception_handler(SignInRequiredError)
+    async def sign_in_handler(_request: Request, exc: SignInRequiredError) -> JSONResponse:
+        return JSONResponse(status_code=401, content={"detail": exc.message, "code": "sign_in"})
+
+    @app.exception_handler(ForbiddenError)
+    async def forbidden_handler(_request: Request, exc: ForbiddenError) -> JSONResponse:
+        return JSONResponse(status_code=403, content={"detail": exc.message, "code": "forbidden"})
 
     @app.exception_handler(QuotaError)
     async def quota_handler(_request: Request, exc: QuotaError) -> JSONResponse:

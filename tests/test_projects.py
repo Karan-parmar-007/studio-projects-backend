@@ -4,7 +4,8 @@ def test_products_are_public(anon_client):
     slugs = [item["slug"] for item in response.json()]
     assert "whisperflow" in slugs
     assert "llm" in slugs
-    assert "chatbot" not in slugs
+    assert "chatbot" in slugs
+    assert "rag" in slugs
     flow = next(item for item in response.json() if item["slug"] == "whisperflow")
     assert flow["page"] == "/whisperflow-clone"
     assert flow["playground"] is True
