@@ -50,6 +50,23 @@ app/
   db/base.py, session.py        Declarative Base; async engine with search_path=studio
   db/garage.py                  S3-compatible Garage client (app binaries); per-request clients
   services/routing.py, gateway.py
+  services/llm_client.py        chatbot/RAG calls to the gateway: embed, rerank, LangChain ChatOllama,
+                                figure descriptions. Names a lane and waits in line (X-Wait).
+  services/rag/                 the RAG engine shared by `chatbot` and `rag`:
+                                model.py (tables), parse.py (Docling / pypdf / md), chunk.py,
+                                entities.py (GLiNER2 or heuristic), graph.py (passage graph, PPR,
+                                graph-smoothed vectors), fusion.py (RRF + blend), retrieve.py,
+                                answer.py (prompt, NDJSON events, answer cache), ingest.py
+                                (pipeline), sources.py (versions: go live, delete Garage then rows),
+                                jobs.py (Postgres queue), sweeper.py (expired uploads), media.py
+                                (signed figure links), portfolio.py (portfolio API -> knowledge)
+  api/routes/settings/          per-product admin settings (access mode, surfaces, limits) +
+                                daily usage counters; settings_service.py does the admission checks
+  api/routes/chatbot/           the site assistant (LangChain create_agent, tools when signed in)
+  api/routes/rag/               Ask a Document: the book + one 1-hour upload per user
+worker.py                       studio-worker: ingestion lanes (fast = uploads, slow = book/chatbot)
+                                and the 10-minute expiry sweep. Image = Dockerfile target `worker`.
+eval/rag_eval.py                recall@5 / MRR on a question set, --ablate, --fit blend weights
 migrations/                     Alembic (async env, version table in the studio schema)
 tests/                          conftest: anon_client / user_client (SSO identity overridden)
 ```
@@ -77,4 +94,11 @@ tests/                          conftest: anon_client / user_client (SSO identit
 - **One uvicorn worker.** `gateway._JOBS` is in memory. Move it to Postgres/Redis
   before scaling workers.
 - **Schema changes go through Alembic**; `create_all` is never called.
+- **pgvector** lives in `public`; the engine's search_path is `studio,public`. Vectors are
+  `halfvec(1024)` (qwen3-embedding:0.6b). Changing the embedding model = new migration + re-index.
+- **Streams open their own sessions** (`request.app.state.postgres_session.sessionmaker()`):
+  the request's DbDep session may close before a StreamingResponse finishes.
+- **Uploads expire.** Every query on an upload checks `expires_at`; the worker deletes Garage
+  objects first, then rows. Never serve figures straight from Garage: use media.url_for().
+- **The chatbot never acts on its own.** Tools prepare (e.g. a Maps run card); the person confirms.
 - **Minimal diffs.** Match existing structure; do not refactor unrelated code.

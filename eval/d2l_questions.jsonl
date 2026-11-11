@@ -1,0 +1,35 @@
+{"question": "Why do we scale the dot product by the square root of d in attention?", "expect": ["scaled dot product", "square root", "\\sqrt{d}", "variance"]}
+{"question": "How does multi-head attention combine the heads?", "expect": ["concatenat", "multi-head attention"]}
+{"question": "What does Fig. 11.5.1 show?", "expect": ["11.5.1"]}
+{"question": "What is the difference between batch normalization and layer normalization?", "expect": ["layer normalization"]}
+{"question": "Why are positional encodings needed in self-attention?", "expect": ["positional encoding"]}
+{"question": "Compare CNNs, RNNs and self-attention in computational complexity and maximum path length", "expect": ["maximum path length", "11.6.1"]}
+{"question": "What problem does the Bahdanau attention mechanism solve in sequence to sequence models?", "expect": ["Bahdanau"]}
+{"question": "What is teacher forcing?", "expect": ["teacher forcing"]}
+{"question": "How does dropout work during training and at test time?", "expect": ["dropout"]}
+{"question": "What is weight decay and how is it related to L2 regularization?", "expect": ["weight decay"]}
+{"question": "Why do vanishing and exploding gradients happen in deep networks?", "expect": ["vanishing", "exploding"]}
+{"question": "How do residual connections in ResNet help training?", "expect": ["residual", "ResNet"]}
+{"question": "What is the idea behind batch normalization?", "expect": ["batch normalization"]}
+{"question": "How does an LSTM memory cell use its gates?", "expect": ["forget gate", "input gate", "output gate"]}
+{"question": "How is a GRU different from an LSTM?", "expect": ["GRU", "reset gate", "update gate"]}
+{"question": "What does the softmax function do and why is it numerically unstable?", "expect": ["softmax"]}
+{"question": "How does cross-entropy loss relate to maximum likelihood?", "expect": ["cross-entropy"]}
+{"question": "What is the receptive field of a convolutional layer?", "expect": ["receptive field"]}
+{"question": "What do padding and stride do in a convolution?", "expect": ["padding", "stride"]}
+{"question": "What is max pooling for?", "expect": ["pooling"]}
+{"question": "How does Adam combine momentum and RMSProp?", "expect": ["Adam"]}
+{"question": "Why does learning rate scheduling help and what is warmup?", "expect": ["warmup", "learning rate schedul"]}
+{"question": "What is the masked language modeling objective in BERT?", "expect": ["masked language model", "BERT"]}
+{"question": "How is GPT pretrained compared with BERT?", "expect": ["GPT"]}
+{"question": "What is the encoder-decoder architecture?", "expect": ["encoder-decoder", "encoder–decoder"]}
+{"question": "How does beam search work and why not greedy search?", "expect": ["beam search"]}
+{"question": "What is the vision transformer and how does it turn an image into tokens?", "expect": ["patch", "vision transformer", "ViT"]}
+{"question": "What is automatic differentiation and how does backpropagation compute gradients?", "expect": ["automatic differentiation", "backpropagation"]}
+{"question": "What is overfitting and how does validation data help detect it?", "expect": ["overfitting", "validation"]}
+{"question": "What is the generator and discriminator in a GAN?", "expect": ["discriminator", "generator"]}
+{"question": "How does word2vec skip-gram learn word embeddings?", "expect": ["skip-gram"]}
+{"question": "What is negative sampling?", "expect": ["negative sampling"]}
+{"question": "What is anchor box in object detection?", "expect": ["anchor box"]}
+{"question": "What is transfer learning with fine-tuning?", "expect": ["fine-tun"]}
+{"question": "What does the attention weights heatmap visualization show?", "expect": ["attention weights", "heatmap"]}

@@ -1,0 +1,6 @@
+# The studio-worker image only: document parsing and entity extraction.
+# torch comes from the CPU index (see Dockerfile), never the CUDA build.
+-r requirements.txt
+docling>=2.149
+gliner2[local]>=1.0
+pillow>=11

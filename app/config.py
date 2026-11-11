@@ -100,7 +100,42 @@ class GarageSettings(BaseSettings):
         return bool(self.GARAGE_ENDPOINT_URL and self.GARAGE_ACCESS_KEY and self.GARAGE_SECRET_KEY)
 
 
+class RagSettings(BaseSettings):
+    """Chatbot + RAG. Models run behind the gateway on the LLM VPS (RAG_GATEWAY_URL)."""
+
+    # Gateway that serves chat, embeddings and /rerank. Empty = LLM_REMOTE_URL, then LLM_LOCAL_URL.
+    RAG_GATEWAY_URL: str = ""
+    # The answer model. Empty = the gateway's OLLAMA_MODEL.
+    RAG_CHAT_MODEL: str = ""
+    # Changing the embedding model or its size needs a new migration + full re-index.
+    RAG_EMBED_MODEL: str = "qwen3-embedding:0.6b"
+    RAG_EMBED_DIM: int = 1024
+    # Context window to request. 0 = use the server's OLLAMA_CONTEXT_LENGTH. Keep it 0: Ollama
+    # reloads the model whenever a request asks for a different size than the one loaded, and
+    # every other caller (voice formatting, keep-alive) uses the server default.
+    RAG_NUM_CTX: int = 0
+    RAG_MAX_ANSWER_TOKENS: int = 400
+    # How long a caller waits in the gateway's line before we say "busy".
+    RAG_WAIT_SECONDS: float = 120
+    # Signs short-lived figure links. Empty = derived from FLOW_TOKEN.
+    RAG_MEDIA_SECRET: str = ""
+    RAG_MEDIA_LINK_SECONDS: int = 900
+    # Portfolio API the chatbot indexes ("/portfolio/overview" etc. are appended).
+    PORTFOLIO_API_URL: str = "http://127.0.0.1:8004/api/portfolio"
+    # Worker: how often the expiry sweeper runs.
+    RAG_SWEEP_SECONDS: int = 600
+
+    model_config = _base_config
+
+    def gateway_url(self) -> str:
+        for candidate in (self.RAG_GATEWAY_URL, auth_settings.LLM_REMOTE_URL, auth_settings.LLM_LOCAL_URL):
+            if candidate and candidate.strip():
+                return candidate.strip().rstrip("/")
+        return ""
+
+
 db_settings = DatabaseSettings()
 auth_settings = AuthSettings()
 cors_settings = CorsSettings()
 garage_settings = GarageSettings()
+rag_settings = RagSettings()

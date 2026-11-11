@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from karan_sso import SsoIdentity
-from karan_sso.fastapi import get_identity, require_admin
+from karan_sso.fastapi import get_identity, get_optional_identity, require_admin
 
 import main
 from app.api import deps
@@ -21,7 +21,9 @@ def anon_client():
 @pytest.fixture
 def user_client():
     main.app.dependency_overrides[deps.get_db] = _db
-    main.app.dependency_overrides[get_identity] = lambda: SsoIdentity(user_id="user-1", email="u@example.com")
+    user = SsoIdentity(user_id="user-1", email="u@example.com")
+    main.app.dependency_overrides[get_identity] = lambda: user
+    main.app.dependency_overrides[get_optional_identity] = lambda: user
     yield TestClient(main.app)
     main.app.dependency_overrides.clear()
 
@@ -29,8 +31,8 @@ def user_client():
 @pytest.fixture
 def admin_client():
     main.app.dependency_overrides[deps.get_db] = _db
-    main.app.dependency_overrides[get_identity] = lambda: SsoIdentity(
-        user_id="admin-1", email="admin@example.com", role="owner"
-    )
+    admin = SsoIdentity(user_id="admin-1", email="admin@example.com", role="owner")
+    main.app.dependency_overrides[get_identity] = lambda: admin
+    main.app.dependency_overrides[get_optional_identity] = lambda: admin
     yield TestClient(main.app)
     main.app.dependency_overrides.clear()

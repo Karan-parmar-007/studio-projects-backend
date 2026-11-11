@@ -87,6 +87,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          target: api
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
@@ -97,16 +98,42 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Make GHCR package public
+      - name: Worker image metadata
+        id: meta-worker
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long,prefix=
+
+      # Same code, plus Docling/GLiNER2/CPU torch and their models (document ingestion).
+      - name: Build and push worker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: worker
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta-worker.outputs.tags }}
+          labels: ${{ steps.meta-worker.outputs.labels }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Make GHCR packages public
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pkg="${IMAGE_NAME#*/}"
-          gh api --method PATCH \
-            -H "Accept: application/vnd.github+json" \
-            "/user/packages/container/${pkg}/visibility" \
-            -f visibility=public \
-            || echo "If this fails, set the package public once in GitHub: Packages → $pkg → Package settings → Change visibility → Public"
+          for pkg in "${IMAGE_NAME#*/}" "${IMAGE_NAME#*/}-worker"; do
+            gh api --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "/user/packages/container/${pkg}/visibility" \
+              -f visibility=public \
+              || echo "If this fails, set the package public once in GitHub: Packages → $pkg → Package settings → Change visibility → Public"
+          done
 
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.2.5
@@ -148,6 +175,20 @@ jobs:
               exit 1
             fi
 
+            # The worker runs the same commit. It has no port or healthcheck; it just restarts.
+            export STUDIO_WORKER_IMAGE="${IMAGE}-worker"
+            docker compose pull studio-worker
+            docker compose up -d --no-deps --pull never --force-recreate studio-worker
+            NEW_WORKER_ID="$(docker inspect -f '{{.Image}}' studio-worker)"
+            docker images --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "${IMAGE}-worker" \
+              | while read -r id ref; do
+                  [ "$id" = "$NEW_WORKER_ID" ] && continue
+                  case "$ref" in
+                    *:"<none>") docker rmi "$id" || true ;;
+                    *) docker rmi "$ref" || true ;;
+                  esac
+                done
+
             NEW_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$SERVICE")"
             # Remove every other local version of this app's image (any tag), then
             # dangling layers and build cache. Scoped to this image so a parallel
@@ -177,5 +218,22 @@ jobs:
         continue-on-error: true
         with:
           package-name: studio-projects-backend
+          package-type: container
+          min-versions-to-keep: 3
+
+      - name: Delete untagged worker GHCR versions
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: studio-projects-backend-worker
+          package-type: container
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: true
+
+      - name: Keep last 3 tagged worker GHCR versions
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: studio-projects-backend-worker
           package-type: container
           min-versions-to-keep: 3

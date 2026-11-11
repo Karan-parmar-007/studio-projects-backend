@@ -1,11 +1,14 @@
 from fastapi import APIRouter
 
 from app.api.routes.api_key import api_key_routes
+from app.api.routes.chatbot import chatbot_routes
 from app.api.routes.downloads import downloads_routes
 from app.api.routes.gmaps import gmaps_public_routes, gmaps_routes
 from app.api.routes.health import health_routes
 from app.api.routes.projects import project_routes
+from app.api.routes.rag import rag_routes
 from app.api.routes.services import service_routes
+from app.api.routes.settings import settings_routes
 from app.api.routes.llm import llm_public_routes, llm_routes
 from app.api.routes.whisperflow import whisperflow_public_routes, whisperflow_routes
 
@@ -16,8 +19,15 @@ main_router.include_router(health_routes.router)
 main_router.include_router(project_routes.router)
 main_router.include_router(downloads_routes.router)
 
+# Signed in or not, as each product's admin setting allows (chatbot, rag)
+main_router.include_router(chatbot_routes.router)
+main_router.include_router(rag_routes.router)
+
 # Signed in (SSO cookie + CSRF)
 main_router.include_router(service_routes.router)
+main_router.include_router(settings_routes.router)
+main_router.include_router(chatbot_routes.admin_router)
+main_router.include_router(rag_routes.admin_router)
 main_router.include_router(api_key_routes.router)
 main_router.include_router(whisperflow_routes.router)
 main_router.include_router(llm_routes.router)
