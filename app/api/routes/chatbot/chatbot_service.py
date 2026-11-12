@@ -265,7 +265,7 @@ async def _stream(
         actions: list[dict] = []
         tools = _tools(maker, identity, actions, surface) if tools_on and identity is not None else []
         system = f"{SYSTEM}\n{_who(identity, tools_on)}\n\n{_knowledge(found)}"
-        model = await llm_client.chat_model("chat", temperature=0.5)
+        model, gateway = await llm_client.chat_model_for("chat", temperature=0.5)
         agent = create_agent(
             model,
             tools,
@@ -308,7 +308,7 @@ async def _stream(
                         yield answers.event("token", text=piece)
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent stream failed: %r", exc)
-            raise llm_client.gateway_error(exc) from exc
+            raise llm_client.gateway_error(exc, gateway) from exc
         while sent_actions < len(actions):
             yield answers.event("action", **actions[sent_actions])
             sent_actions += 1

@@ -369,3 +369,42 @@ def test_embed_posts_to_the_embedding_server(monkeypatch):
     assert captured["url"] == "http://embed-ollama:11434/api/embed"
     assert captured["model"] == llm_client.rag_settings.RAG_EMBED_MODEL
     assert len(vectors) == 1
+
+
+def test_a_live_book_only_finishes_its_figures_after_a_restart(monkeypatch):
+    import asyncio
+    import uuid as _uuid
+    from contextlib import asynccontextmanager
+    from datetime import UTC, datetime
+
+    from app.services.rag import ingest
+    from app.services.rag import sources as source_lib
+    from app.services.rag.model import RagSource
+
+    book = RagSource(id=_uuid.uuid4(), scope="book", title="D2L", status="ready", stage="figures",
+                     ready_at=datetime.now(UTC), completed_at=None)
+    seen = {"figures": 0, "pipeline": 0, "stages": []}
+
+    @asynccontextmanager
+    async def maker():
+        yield object()
+
+    async def get_source(session, source_id):
+        return book
+
+    async def describe(maker_, source, title, limit):
+        seen["figures"] += 1
+
+    async def pipeline(*args, **kwargs):
+        seen["pipeline"] += 1
+
+    async def set_stage(session, source_id, stage, progress, **extra):
+        seen["stages"].append((stage, extra.get("status")))
+
+    monkeypatch.setattr(ingest, "_source", get_source)
+    monkeypatch.setattr(ingest, "_describe_figures", describe)
+    monkeypatch.setattr(ingest, "_pipeline", pipeline)
+    monkeypatch.setattr(source_lib, "set_stage", set_stage)
+    asyncio.run(ingest.run(maker, book.id))
+    assert seen["figures"] == 1 and seen["pipeline"] == 0
+    assert seen["stages"] == [("complete", None)]  # never set back to "processing"

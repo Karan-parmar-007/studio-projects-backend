@@ -17,6 +17,7 @@ import signal
 
 from app.config import rag_settings
 from app.db.session import PostgresSession
+from app.services import llm_client
 from app.services.rag import ingest, jobs, sweeper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -71,6 +72,7 @@ async def sweep_loop(maker, stop: asyncio.Event) -> None:
 async def main() -> None:
     postgres = PostgresSession()
     maker = postgres.sessionmaker
+    llm_client.use_sessions(maker)  # figure descriptions use the PC first when it is up
     async with maker() as session:
         recovered = await jobs.recover_stale(session, everything=True)
     if recovered:

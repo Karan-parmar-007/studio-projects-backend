@@ -79,6 +79,13 @@ async def run(maker, source_id: uuid.UUID) -> None:
             return
         if source.status == "ready" and source.completed_at is not None:
             return  # already done (a retried job)
+        live_already = source.status == "ready" and source.ready_at is not None
+    if live_already:
+        # Searchable already; only figure descriptions were left (e.g. the worker restarted).
+        # Finish those and stay live: never re-link a whole book or drop it off the shelf.
+        await _finish_figures(maker, source)
+        return
+    async with maker() as session:
         resuming = await _parsed_already(session, source)
         await source_lib.set_stage(
             session, source_id, "embedding" if resuming else "parsing", 30 if resuming else 2,
@@ -104,6 +111,25 @@ async def run(maker, source_id: uuid.UUID) -> None:
                 error="Something went wrong while reading this document.",
             )
         raise
+
+
+async def _finish_figures(maker, source: RagSource) -> None:
+    from app.api.routes.settings import settings_service
+
+    try:
+        await _describe_figures(
+            maker, source, source.title, UPLOAD_FIGURE_LIMIT if source.scope == "upload" else None
+        )
+    except SourceGone:
+        await _remove_leftovers(source.id)
+        return
+    async with maker() as session:
+        done = source_lib.now()
+        extra_values = {}
+        if source.scope == "upload":
+            conf = await settings_service.load(session, "rag")
+            extra_values["expires_at"] = done + timedelta(minutes=conf.upload_ttl_minutes)
+        await source_lib.set_stage(session, source.id, "complete", 100, completed_at=done, **extra_values)
 
 
 async def _parsed_already(session, source: RagSource) -> bool:

@@ -11,6 +11,7 @@ from app.config import auth_settings, cors_settings
 from app.core.errors import register_exception_handlers
 from app.db.garage import GarageSession
 from app.db.session import PostgresSession
+from app.services import llm_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     postgres = PostgresSession()
     app.state.postgres_session = postgres
+    # The assistant's local/remote model links live in the database.
+    llm_client.use_sessions(postgres.sessionmaker)
     # Garage clients are created per request; nothing to verify at startup.
     app.state.garage_session = GarageSession()
     try:
