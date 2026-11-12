@@ -50,6 +50,12 @@ def base_url() -> str:
     return url
 
 
+def embed_url() -> str:
+    """Where vectors are built. RAG_EMBED_URL when set, otherwise the chat gateway."""
+    url = rag_settings.RAG_EMBED_URL.strip().rstrip("/")
+    return url or base_url()
+
+
 def _raise_for(response: httpx.Response, what: str) -> None:
     if response.status_code == 429:
         raise QuotaError("The assistant is busy with other people. Try again in a minute.", code="busy")
@@ -78,7 +84,7 @@ async def embed(texts: list[str], *, query: bool = False, lane: str = "embed") -
             for start in range(0, len(prepared), EMBED_BATCH):
                 batch = prepared[start : start + EMBED_BATCH]
                 response = await client.post(
-                    f"{base_url()}/api/embed",
+                    f"{embed_url()}/api/embed",
                     json={
                         "model": rag_settings.RAG_EMBED_MODEL,
                         "input": batch,

@@ -316,3 +316,56 @@ def test_embedding_batch_retries_before_failing(monkeypatch):
         pass
     else:
         raise AssertionError("gave up silently")
+
+
+def test_embed_url_uses_the_local_ollama_when_set(monkeypatch):
+    from app.services import llm_client
+
+    monkeypatch.setattr(llm_client.rag_settings, "RAG_EMBED_URL", "http://embed-ollama:11434/")
+    assert llm_client.embed_url() == "http://embed-ollama:11434"
+
+
+def test_embed_url_falls_back_to_the_gateway(monkeypatch):
+    from app.services import llm_client
+
+    monkeypatch.setattr(llm_client.rag_settings, "RAG_EMBED_URL", "")
+    monkeypatch.setattr(llm_client, "base_url", lambda: "http://gateway:8011")
+    assert llm_client.embed_url() == "http://gateway:8011"
+
+
+def test_embed_posts_to_the_embedding_server(monkeypatch):
+    import asyncio
+
+    from app.services import llm_client
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"embeddings": [[1.0, 0.0]]}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, json=None, headers=None):
+            captured["url"] = url
+            captured["model"] = json["model"]
+            return FakeResponse()
+
+    monkeypatch.setattr(llm_client.rag_settings, "RAG_EMBED_URL", "http://embed-ollama:11434")
+    monkeypatch.setattr(llm_client.rag_settings, "RAG_EMBED_DIM", 2)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", FakeClient)
+    vectors = asyncio.run(llm_client.embed(["hello"]))
+    assert captured["url"] == "http://embed-ollama:11434/api/embed"
+    assert captured["model"] == llm_client.rag_settings.RAG_EMBED_MODEL
+    assert len(vectors) == 1
