@@ -28,6 +28,7 @@ import numpy as np
 from sqlalchemy import select, text
 
 from app.config import rag_settings
+from app.core.errors import ModelOfflineError, QuotaError
 from app.db.garage import delete_prefix, download_to_file, garage_client, get_object, put_object
 from app.services import llm_client
 from app.services.rag import entities as entity_lib
@@ -78,7 +79,11 @@ async def run(maker, source_id: uuid.UUID) -> None:
             return
         if source.status == "ready" and source.completed_at is not None:
             return  # already done (a retried job)
-        await source_lib.set_stage(session, source_id, "parsing", 2, status="processing", error=None)
+        resuming = await _parsed_already(session, source)
+        await source_lib.set_stage(
+            session, source_id, "embedding" if resuming else "parsing", 30 if resuming else 2,
+            status="processing", error=None,
+        )
     try:
         await _pipeline(maker, source_id)
     except SourceGone:
@@ -99,6 +104,16 @@ async def run(maker, source_id: uuid.UUID) -> None:
                 error="Something went wrong while reading this document.",
             )
         raise
+
+
+async def _parsed_already(session, source: RagSource) -> bool:
+    """Reading finished on an earlier attempt (page_count is only set once every page is read):
+    a retry resumes at embedding instead of reading a 1,000-page book again."""
+    if not source.page_count:
+        return False
+    return bool(
+        await session.scalar(text("SELECT 1 FROM studio.rag_chunks WHERE source_id = :s LIMIT 1"), {"s": source.id})
+    )
 
 
 async def _remove_leftovers(source_id: uuid.UUID) -> None:
@@ -238,19 +253,61 @@ async def _chunk_rows(session, source_id: uuid.UUID) -> list[tuple]:
     return [tuple(r) for r in rows]
 
 
+EMBED_RETRY_WAITS = (15, 30, 60, 120, 240)
+
+
+async def _embed_with_retry(texts: list[str], lane: str) -> list[list[float]]:
+    """A busy or briefly unreachable LLM server must not fail a book that took hours to read:
+    wait and try again (about 8 minutes in total) before giving up."""
+    for attempt, wait in enumerate((*EMBED_RETRY_WAITS, None)):
+        try:
+            return await llm_client.embed(texts, lane=lane)
+        except (ModelOfflineError, QuotaError) as exc:
+            if wait is None:
+                raise
+            logger.warning("embedding batch failed (%s), retry %s in %ss", exc, attempt + 1, wait)
+            await asyncio.sleep(wait)
+    raise ModelOfflineError("unreachable")  # pragma: no cover
+
+
+def _parse_vector(value: str | None) -> np.ndarray | None:
+    if not value:
+        return None
+    return np.asarray(np.fromstring(value.strip("[]"), sep=","), dtype=np.float32)
+
+
 async def _embed_all(maker, source: RagSource, title: str, rows: list[tuple], lane: str) -> np.ndarray:
-    vectors = np.zeros((len(rows), rag_settings.RAG_EMBED_DIM), dtype=np.float32)
-    for start in range(0, len(rows), EMBED_GROUP):
+    """Embed the chunks that have no vector yet (a resumed run skips the done ones), then
+    return every chunk's vector in reading order."""
+    async with maker() as session:
+        missing = {
+            int(r[0])
+            for r in await session.execute(
+                text("SELECT id FROM studio.rag_chunks WHERE source_id = :s AND embedding IS NULL"), {"s": source.id}
+            )
+        }
+    todo = [r for r in rows if int(r[0]) in missing]
+    done_before = len(rows) - len(todo)
+    for start in range(0, len(todo), EMBED_GROUP):
         await _ensure_exists(maker, source.id)
-        group = rows[start : start + EMBED_GROUP]
-        embedded = await llm_client.embed([embed_text(title, r[3], r[4]) for r in group], lane=lane)
-        vectors[start : start + len(group)] = np.asarray(embedded, dtype=np.float32)
+        group = todo[start : start + EMBED_GROUP]
+        embedded = await _embed_with_retry([embed_text(title, r[3], r[4]) for r in group], lane)
         async with maker() as session:
             await session.execute(
                 text("UPDATE studio.rag_chunks SET embedding = CAST(:v AS halfvec) WHERE id = :id"),
                 [{"id": r[0], "v": vector_literal(v)} for r, v in zip(group, embedded)],
             )
-            await source_lib.set_stage(session, source.id, "embedding", 30 + int(45 * (start + len(group)) / len(rows)))
+            finished = done_before + start + len(group)
+            await source_lib.set_stage(session, source.id, "embedding", 30 + int(45 * finished / max(len(rows), 1)))
+    vectors = np.zeros((len(rows), rag_settings.RAG_EMBED_DIM), dtype=np.float32)
+    index = {int(r[0]): i for i, r in enumerate(rows)}
+    async with maker() as session:
+        for chunk_id, value in await session.execute(
+            text("SELECT id, embedding::text FROM studio.rag_chunks WHERE source_id = :s"), {"s": source.id}
+        ):
+            vector = _parse_vector(value)
+            if vector is not None and int(chunk_id) in index:
+                vectors[index[int(chunk_id)]] = vector[: rag_settings.RAG_EMBED_DIM]
     return vectors
 
 
@@ -328,7 +385,9 @@ async def _describe_figures(maker, source: RagSource, title: str, limit: int | N
     async with maker() as session:
         figures = list(
             await session.scalars(
-                select(RagFigure).where(RagFigure.source_id == source.id).order_by(RagFigure.chunk_ord)
+                select(RagFigure)
+                .where(RagFigure.source_id == source.id, RagFigure.description == "")
+                .order_by(RagFigure.chunk_ord)
             )
         )
     if limit is not None:
@@ -398,13 +457,32 @@ async def _pipeline(maker, source_id: uuid.UUID) -> None:
 
     async with maker() as session:
         source = await _source(session, source_id)
-        await _clear_partial(session, source_id)
+        if source is None:
+            return
+        resuming = await _parsed_already(session, source)
+        if resuming:
+            # Keep the chunks, figures and vectors already made; entities are rebuilt below.
+            await session.execute(text("DELETE FROM studio.rag_entities WHERE source_id = :s"), {"s": source_id})
+            await session.commit()
+        else:
+            await _clear_partial(session, source_id)
         rag_conf = await settings_service.load(session, "rag")
-    if source is None:
-        return
     is_upload = source.scope == "upload"
     lane = "embed" if is_upload else "ingest"
 
+    if resuming:
+        logger.info("source %s: reading finished earlier, resuming at embedding", source_id)
+        title, pages, count = source.title, source.page_count, 1
+    else:
+        title, pages, count = await _read_document(maker, source, rag_conf, is_upload)
+        release_models()
+
+    if count == 0:
+        raise IngestError("No readable text was found. Scanned pages are not supported yet.")
+    await _after_reading(maker, source, source_id, title, pages, lane, is_upload, rag_conf)
+
+
+async def _read_document(maker, source: RagSource, rag_conf, is_upload: bool) -> tuple[str, int, int]:
     with tempfile.TemporaryDirectory(prefix="rag-") as workdir:
         path: str | None = None
         if source.input_key:
@@ -424,12 +502,11 @@ async def _pipeline(maker, source_id: uuid.UUID) -> None:
                 if not path:
                     raise IngestError("The portfolio could not be read and there is no PDF to use.")
             extra += portfolio.studio_blocks()
-        title, pages, count = await _parse_into_db(maker, source, path, extra)
-    release_models()
+        return await _parse_into_db(maker, source, path, extra)
 
-    if count == 0:
-        raise IngestError("No readable text was found. Scanned pages are not supported yet.")
 
+async def _after_reading(maker, source: RagSource, source_id: uuid.UUID, title: str, pages: int, lane: str,
+                         is_upload: bool, rag_conf) -> None:
     async with maker() as session:
         rows = await _chunk_rows(session, source_id)
         await source_lib.set_stage(session, source_id, "embedding", 30, title=title[:300], page_count=pages)

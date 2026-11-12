@@ -14,8 +14,10 @@ questions; passages and the question come after it.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import time
 import unicodedata
 import uuid
 from typing import Any
@@ -39,6 +41,59 @@ Rules:
 - Be clear and short: at most 6 sentences, or a short list when the answer is steps or items.
 - Write plain Markdown. No headings.
 """
+
+
+HEARTBEAT = object()
+_ANSWER_LANES = ("voice", "chat", "rag")
+
+
+async def with_heartbeat(source, every: float = 3.0):
+    """Yield the source's items, plus HEARTBEAT whenever nothing arrived for `every` seconds
+    (waiting in line, or the model still reading the question). The source is consumed in one
+    background task, so LangChain/LangGraph context stays in a single task."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def pump() -> None:
+        try:
+            async for item in source:
+                await queue.put(("item", item))
+            await queue.put(("done", None))
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the consumer
+            await queue.put(("error", exc))
+
+    task = asyncio.create_task(pump())
+    try:
+        while True:
+            try:
+                kind, value = await asyncio.wait_for(queue.get(), every)
+            except TimeoutError:
+                yield HEARTBEAT
+                continue
+            if kind == "item":
+                yield value
+            elif kind == "done":
+                return
+            else:
+                raise value
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+async def waiting_status(started: float) -> str:
+    """"In line: N ahead" while other answers are being written (the LLM server writes one at a
+    time), else "thinking" (the model is reading the question). Seconds since the request."""
+    from app.services import llm_client
+
+    board = await llm_client.queue_snapshot()
+    lanes = board.get("lanes") or {}
+    busy = sum(
+        (1 if (lanes.get(name) or {}).get("running") else 0) + int((lanes.get(name) or {}).get("queued") or 0)
+        for name in _ANSWER_LANES
+    )
+    ahead = max(busy - 1, 0)  # this request is one of them
+    waited = int(time.monotonic() - started)
+    return event("status", stage="waiting" if ahead else "thinking", ahead=ahead, waited=waited)
 
 
 def event(kind: str, /, **data: Any) -> str:

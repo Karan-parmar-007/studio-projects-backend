@@ -239,3 +239,80 @@ def test_refusal_that_lists_other_topics_is_still_a_refusal():
         "The provided passages do not contain information on how to bake sourdough bread. "
         "They discuss SageMaker and GRUs, but none mention baking [5]."
     )
+
+
+def test_heartbeat_while_waiting_and_errors_pass_through():
+    import asyncio
+
+    async def slow():
+        await asyncio.sleep(0.12)
+        yield "first"
+        yield "second"
+
+    async def broken():
+        await asyncio.sleep(0.01)
+        raise RuntimeError("model down")
+        yield  # pragma: no cover
+
+    async def collect(source):
+        return [item async for item in answer.with_heartbeat(source, every=0.05)]
+
+    items = asyncio.run(collect(slow()))
+    assert items.count(answer.HEARTBEAT) >= 1 and items[-2:] == ["first", "second"]
+    try:
+        asyncio.run(collect(broken()))
+    except RuntimeError as exc:
+        assert "model down" in str(exc)
+    else:
+        raise AssertionError("error was swallowed")
+
+
+def test_waiting_status_counts_people_ahead(monkeypatch):
+    import asyncio
+    import json as _json
+    import time as _time
+
+    from app.services import llm_client
+
+    async def board():
+        return {"lanes": {"chat": {"running": True, "queued": 2}, "rag": {"running": False, "queued": 0},
+                          "embed": {"running": True, "queued": 5}}}
+
+    monkeypatch.setattr(llm_client, "queue_snapshot", board)
+    line = _json.loads(asyncio.run(answer.waiting_status(_time.monotonic() - 7)))
+    assert line["data"] == {"stage": "waiting", "ahead": 2, "waited": 7}  # embed lane is not an answer
+
+
+def test_embedding_batch_retries_before_failing(monkeypatch):
+    import asyncio
+
+    from app.core.errors import ModelOfflineError
+    from app.services import llm_client
+    from app.services.rag import ingest
+
+    calls = {"n": 0}
+
+    async def flaky(texts, lane="embed", query=False):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ModelOfflineError("busy")
+        return [[0.1] * 4 for _ in texts]
+
+    async def no_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(llm_client, "embed", flaky)
+    monkeypatch.setattr(ingest.asyncio, "sleep", no_sleep)
+    assert asyncio.run(ingest._embed_with_retry(["a", "b"], "ingest")) == [[0.1] * 4, [0.1] * 4]
+    assert calls["n"] == 3
+
+    async def always_down(texts, lane="embed", query=False):
+        raise ModelOfflineError("down")
+
+    monkeypatch.setattr(llm_client, "embed", always_down)
+    try:
+        asyncio.run(ingest._embed_with_retry(["a"], "ingest"))
+    except ModelOfflineError:
+        pass
+    else:
+        raise AssertionError("gave up silently")

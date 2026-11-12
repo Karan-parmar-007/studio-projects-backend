@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -297,14 +298,19 @@ async def _answer_stream(
                 return
             sources = answers.source_list(found.passages, titles)
             figures = answers.figure_list(found.figures)
-            yield answers.event("status", stage="writing", ahead=ahead)
+            started = time.monotonic()
+            yield await answers.waiting_status(started)
             model = await llm_client.chat_model("rag", temperature=0.3)
             text_out = ""
             # Hold the first characters back: the model answers NOT_FOUND when the passages do
             # not cover the question, and then no unrelated sources or figures should show.
             held = True
             try:
-                async for chunk in model.astream(answers.rag_messages(found, question, history)):
+                async for chunk in answers.with_heartbeat(model.astream(answers.rag_messages(found, question, history))):
+                    if chunk is answers.HEARTBEAT:
+                        if held:
+                            yield await answers.waiting_status(started)
+                        continue
                     piece = chunk.content if isinstance(chunk.content, str) else ""
                     if not piece:
                         continue
