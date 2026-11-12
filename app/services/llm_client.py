@@ -163,7 +163,9 @@ async def chat_model(lane: str, *, max_tokens: int | None = None, temperature: f
     forces think=false too, and a 4B model answers better without a hidden essay."""
     from langchain_ollama import ChatOllama
 
-    kwargs = {"headers": headers(lane), "timeout": rag_settings.RAG_WAIT_SECONDS + 300}
+    # Time in the gateway line + up to 15 minutes of silence while the CPU model reads the prompt
+    # (the gateway allows OLLAMA_STREAM_TIMEOUT_SECONDS=900). Progress shows meanwhile.
+    kwargs = {"headers": headers(lane), "timeout": rag_settings.RAG_WAIT_SECONDS + 960}
     return ChatOllama(
         model=await chat_model_name(),
         base_url=base_url(),

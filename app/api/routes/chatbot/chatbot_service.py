@@ -16,6 +16,7 @@ the person presses Run, and the browser calls the normal Maps Scraper endpoint.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -274,16 +275,23 @@ async def _stream(
                 ToolCallLimitMiddleware(run_limit=3),
             ],
         )
-        yield answers.event("status", stage="writing", ahead=ahead)
+        started = time.monotonic()
+        yield await answers.waiting_status(started)
         text_out = ""
         used_tools = False
         sent_actions = 0
         try:
-            async for chunk, meta in agent.astream(
+            stream = agent.astream(
                 {"messages": _messages(history, message)},
                 {"recursion_limit": 10},
                 stream_mode="messages",
-            ):
+            )
+            async for item in answers.with_heartbeat(stream):
+                if item is answers.HEARTBEAT:
+                    if not text_out:
+                        yield await answers.waiting_status(started)
+                    continue
+                chunk, meta = item
                 if isinstance(chunk, ToolMessage):
                     used_tools = True
                     yield answers.event("tool", name=chunk.name or "", status="done")
