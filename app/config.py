@@ -127,6 +127,11 @@ class RagSettings(BaseSettings):
     PORTFOLIO_API_URL: str = "http://127.0.0.1:8004/api/portfolio"
     # Worker: how often the expiry sweeper runs.
     RAG_SWEEP_SECONDS: int = 600
+    # First-time default for the assistant's "local" link (Karan's PC gateway, e.g. its tunnel).
+    # Empty = the link starts off; set it later in Admin. The "remote" link defaults to the
+    # gateway above. Answers, reranking and figure descriptions try local first when it is on
+    # and answers /health, else remote.
+    RAG_LOCAL_URL: str = ""
 
     model_config = _base_config
 

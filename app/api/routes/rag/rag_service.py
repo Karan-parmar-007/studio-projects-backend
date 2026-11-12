@@ -300,7 +300,7 @@ async def _answer_stream(
             figures = answers.figure_list(found.figures)
             started = time.monotonic()
             yield await answers.waiting_status(started)
-            model = await llm_client.chat_model("rag", temperature=0.3)
+            model, gateway = await llm_client.chat_model_for("rag", temperature=0.3)
             text_out = ""
             # Hold the first characters back: the model answers NOT_FOUND when the passages do
             # not cover the question, and then no unrelated sources or figures should show.
@@ -332,7 +332,7 @@ async def _answer_stream(
                         continue
                     yield answers.event("token", text=piece)
             except Exception as exc:  # noqa: BLE001
-                raise llm_client.gateway_error(exc) from exc
+                raise llm_client.gateway_error(exc, gateway) from exc
             if held or answers.is_refusal(text_out):  # NOT_FOUND, or refused in words
                 refused = answers.is_refusal(text_out)
                 yield answers.event("sources", sources=[] if refused else sources, figures=[] if refused else figures)

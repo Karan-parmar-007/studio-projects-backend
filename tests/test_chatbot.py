@@ -46,7 +46,11 @@ def fake_stack(monkeypatch):
         return 0
 
     settings_service.in_flight._busy.clear()
+    async def chat_model_for(lane, **kwargs):
+        return await chat_model(lane, **kwargs), "http://gateway.test"
+
     monkeypatch.setattr(llm_client, "chat_model", chat_model)
+    monkeypatch.setattr(llm_client, "chat_model_for", chat_model_for)
     monkeypatch.setattr(source_lib, "active", nothing)
 
     async def empty_shelf(*args, **kwargs):
@@ -141,6 +145,7 @@ def test_busy_gateway_becomes_an_error_event(anon_client, fake_stack, monkeypatc
         raise QuotaError("The assistant is busy with other people. Try again in a minute.", code="busy")
 
     monkeypatch.setattr(llm_client, "chat_model", busy)
+    monkeypatch.setattr(llm_client, "chat_model_for", busy)
     events = _events(anon_client.post("/api/studio/chatbot/chat", json={"message": "hi"}))
     assert events[-1]["type"] == "error" and events[-1]["data"]["code"] == "busy"
 

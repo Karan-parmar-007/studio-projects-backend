@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.deps import DbDep
 from app.api.routes.chatbot import chatbot_service as service
 from app.api.routes.rag import rag_service
+from app.api.routes.model_links.model_links_schemas import LinkOut, LinkUpdate
 from app.auth.sso import AdminDep
+from app.services.rag import links as links_service
 from app.core.errors import ConflictError
 from app.db.garage import copy_object, garage_client, put_object
 from app.services.rag import jobs, media
@@ -71,6 +73,17 @@ async def chat(body: ChatIn, request: Request, identity: OptionalIdentityDep, db
         body.surface,
     )
     return StreamingResponse(stream, media_type="application/x-ndjson", headers=NDJSON_HEADERS)
+
+
+# Model links (admin): the PC first, the LLM server second. Shared with Ask a Document (/rag/links).
+@router.get("/links", response_model=list[LinkOut])
+async def model_links(user: AdminDep, db: DbDep):
+    return await links_service.list_links(db)
+
+
+@router.put("/links/{link_id}", response_model=LinkOut)
+async def save_model_link(link_id: uuid.UUID, body: LinkUpdate, user: AdminDep, db: DbDep):
+    return await links_service.save_link(db, link_id, body.url, body.enabled)
 
 
 # ---------------------------------------------------------------- admin
