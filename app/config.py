@@ -103,8 +103,11 @@ class GarageSettings(BaseSettings):
 class RagSettings(BaseSettings):
     """Chatbot + RAG. Models run behind the gateway on the LLM VPS (RAG_GATEWAY_URL)."""
 
-    # Gateway that serves chat, embeddings and /rerank. Empty = LLM_REMOTE_URL, then LLM_LOCAL_URL.
+    # Gateway that serves chat, /rerank and figure descriptions. Empty = LLM_REMOTE_URL, then LLM_LOCAL_URL.
     RAG_GATEWAY_URL: str = ""
+    # Embeddings only. Empty = the gateway above. On the web VPS this is the local
+    # Ollama, http://embed-ollama:11434, so the chat model does not share its RAM.
+    RAG_EMBED_URL: str = ""
     # The answer model. Empty = the gateway's OLLAMA_MODEL.
     RAG_CHAT_MODEL: str = ""
     # Changing the embedding model or its size needs a new migration + full re-index.
